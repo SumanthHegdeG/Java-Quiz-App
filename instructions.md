@@ -431,6 +431,464 @@ V1__init.sql
 
 ---
 
+# Hibernate / JPA Entities (MySQL Compatible)
+All entities combined in one Markdown file.  
+No Lombok.  
+Uses JPA (Jakarta) + MySQL-friendly schema.
+
+---
+
+Nice — I’ll turn your whole data model and the fixes into a **story-mode walkthrough**. Read it like a little fable of an exam system where each entity is a character, they interact, they make mistakes, and then they fix themselves. At the end I give a concise checklist (copy-paste fixes) so you can apply the changes immediately.
+
+# The Exam Portal — a story of seven friends (and how they learned to behave)
+
+Once upon a commit, in the kingdom of `quizdb`, seven friends lived in neighboring houses (tables). They wanted to play nicely together and not crash the village compiler. Their names: **User**, **Exam**, **Question**, **QuestionPaper**, **QuestionPaperItem**, **Attempt**, and **StudentAnswer**. Here’s their story.
+
+---
+
+## Chapter 1 — User, the town organizer
+
+User is the friendly organizer who signs people up, creates exams, and keeps a list of the exams they created.
+
+How User was written at first:
+
+* Proudly used primitive `long id`, capitalized `PasswordHash`, and had lots of Lombok magic sprinkled (`@Data`, `@Getter`, `@Setter` all at once).
+
+What went wrong:
+
+* `long id` can’t be `null` before save — Hibernate wanted `null` to know the entity is new.
+* `PasswordHash`’s capital P broke Java naming conventions and led to odd column names.
+* `@Data` with collections caused `equals()`/`hashCode()` problems (infinite recursion and performance surprises).
+
+How User learned to behave:
+
+* Changed `long` → `Long`.
+* Renamed `PasswordHash` → `passwordHash` and annotated `@Column(name="password_hash")`.
+* Replaced `@Data` with `@Getter @Setter` and `@EqualsAndHashCode(exclude="examsCreated")`.
+* Kept `createdAt` set by `@PrePersist` (or optionally `@CreationTimestamp`), and set `registrationAllowed` default to `false`.
+
+Moral: use wrapper types, follow naming conventions, avoid `@Data` on entities with collections.
+
+---
+
+## Chapter 2 — Exam, the event planner
+
+Exam organizes a time window, duration, and points to a User who created it.
+
+Original behavior:
+
+* Had `questionPaperList` with no `mappedBy`, so JPA would create an extra join table (surprise).
+* Used inconsistent column name `Exam_id` (capital E).
+
+What Exam fixed:
+
+* Declared `@ManyToOne` to `User` with `@JoinColumn(name="created_by")`.
+* For its papers, used `@OneToMany(mappedBy="exam", cascade=ALL, orphanRemoval=true)` and `questionPapers` (initialized to `new ArrayList<>()`).
+* Excluded `questionPapers` from `equals/hashCode`.
+
+Moral: the owning side is `@ManyToOne` (join column), `@OneToMany` must use `mappedBy`. Keep names snake_case.
+
+---
+
+## Chapter 3 — Question, the curious one
+
+Question stores text, type, choices (JSON), correctAnswer and marks.
+
+Original issues:
+
+* Field `Type` (capital T) — inconsistent naming.
+* `choices` used `columnDefinition="json"` — fine with MySQL 5.7+, but you had removed `hibernate-types` from POM, so JSON mapping should be a `String` unless you add compatible `hibernate-types`.
+
+Question’s new habits:
+
+* Use `type` (lowercase), `choices` as `String` (JSON blob) or map to `JsonNode` but only with a compatible `hibernate-types` version.
+* Keep `text` as `TEXT`, `marks` default to 1.
+
+Moral: keep consistent casing; only use advanced JSON mapping when dependencies match.
+
+---
+
+## Chapter 4 — QuestionPaper, the test booklet
+
+QuestionPaper belongs to an Exam and contains many QuestionPaperItems.
+
+Original slipups:
+
+* Table named `question_paper` (singular/inconsistent).
+* `@ManyToOne` used `Exam_id` with bad capitalization.
+
+How QuestionPaper fixed it:
+
+* Table renamed `question_papers`.
+* `@ManyToOne(fetch = LAZY) @JoinColumn(name="exam_id")` and `@OneToMany(mappedBy="paper", cascade=ALL)` for items.
+
+Moral: follow consistent table naming and ownership rules.
+
+---
+
+## Chapter 5 — QuestionPaperItem, the page marker
+
+Each item links a Question to a QuestionPaper and has an ordering.
+
+Pitfalls:
+
+* used column name `` `ordering` `` (works in MySQL but is risky — reserved words can cause pain).
+
+Fix:
+
+* Renamed to `order_index` (or `position`) via `@Column(name="order_index")`.
+* Ensured `paper` and `question` are `nullable = false` if they must always exist.
+
+Moral: avoid reserved words; choose safe column names.
+
+---
+
+## Chapter 6 — Attempt, the student's session
+
+Attempt tracks when a student started and submitted an exam and holds their StudentAnswers.
+
+Bugs:
+
+* `@OneToMany(mappedBy="attemp")` — typo (`attemp`), so mapping failed.
+* `student_Id` and `submitted_Time` used odd capitalization.
+* `id` used `AUTO` strategy, safe but prefer `IDENTITY` with MySQL for clarity.
+* `answers` list not initialized.
+
+Lessons learned:
+
+* `mappedBy` must match the field name on the owning side (`StudentAnswer.attempt`). Fix to `mappedBy = "attempt"`.
+* Use `student_id` and `submitted_at` as column names.
+* Use `Long` id, initialize `answers = new ArrayList<>()`.
+
+Moral: typos and inconsistent naming break mappings; always match `mappedBy` string to the owning field name.
+
+---
+
+## Chapter 7 — StudentAnswer, the record keeper
+
+StudentAnswer is the leaf: it belongs to an Attempt and to a Question, stores the answer text, a boolean `isAttempted`, and `marksAwarded`.
+
+Problems found:
+
+* Table name `studentanswers` inconsistent with snake_case.
+* `attempt` join is fine but `Attempt`’s `mappedBy` typo prevented the bidirectional association.
+* `isAttempted` defaulted to `false` — OK but ensure `nullable=false`.
+
+Fixes:
+
+* Table renamed to `student_answers`.
+* `attempt` and `question` `@JoinColumn(..., nullable=false)` so FK integrity is clear.
+* `marksAwarded` kept as `BigDecimal` with `precision=10, scale=2`.
+
+Moral: leaf tables must be precise and own their joins.
+
+---
+
+## Interlude — relationships (the family tree)
+
+* `User (1) ⇄ (N) Exam` — Exam owns `created_by`.
+* `Exam (1) ⇄ (N) QuestionPaper` — QuestionPaper owns `exam_id`.
+* `QuestionPaper (1) ⇄ (N) QuestionPaperItem` — QuestionPaperItem owns `paper_id`.
+* `Question (1) ⇄ (N) QuestionPaperItem` — QuestionPaperItem owns `question_id`.
+* `Attempt (1) ⇄ (N) StudentAnswer` — StudentAnswer owns `attempt_id`.
+* `Question (1) ⇄ (N) StudentAnswer` — StudentAnswer owns `question_id`.
+
+Rule of thumb: the side with `@JoinColumn` is the owner; `@OneToMany` uses `mappedBy` to point to that owning field.
+
+---
+
+## The dependency drama (short side-plot)
+
+Remember the `hibernate-types-52` library — it tried to be helpful (map JSON into objects) but caused a crash because it expected an older Postgres dialect class. You removed it from the POM; so for now `choices` stays a `String` (JSON text). If later you need `JsonNode`, bring back `hibernate-types` with a version compatible with Hibernate 6.x or use manual Jackson parsing.
+
+---
+
+## Final — quick fixes (copy-paste checklist)
+
+Apply these changes across the codebase. They’re short, precise, and will make the friends behave.
+
+1. Replace primitives with wrappers:
+
+    * `long` → `Long`, `int` → `Integer`, `boolean` → `Boolean`.
+
+2. Fix naming:
+
+    * `PasswordHash` → `passwordHash`, `Type` → `type`.
+    * Column names: `Exam_id` → `exam_id`, `student_Id` → `student_id`, `submitted_Time` → `submitted_at`.
+
+3. Fix `mappedBy` typos:
+
+    * In `Attempt`: `@OneToMany(mappedBy = "attempt") private List<StudentAnswer> answers;`
+    * In `Exam`: `@OneToMany(mappedBy = "exam") private List<QuestionPaper> questionPapers;`
+
+4. Table & column naming consistency:
+
+    * Use snake_case plural tables: `users`, `exams`, `questions`, `question_papers`, `question_paper_items`, `attempts`, `student_answers`.
+
+5. Initialize lists:
+
+    * `private List<QuestionPaper> questionPapers = new ArrayList<>();` etc.
+
+6. Replace `@Data` with safer Lombok:
+
+    * Use `@Getter @Setter`, `@NoArgsConstructor`, `@AllArgsConstructor`, and `@EqualsAndHashCode(exclude = "collectionField")`.
+
+7. JSON column handling:
+
+    * Keep `choices` as `String` in DB or re-add `hibernate-types` with a compatible version and map to `JsonNode`.
+
+8. Set nullable and defaults:
+
+    * `@Column(name="registration_allowed", nullable=false) private Boolean registrationAllowed = false;`
+    * `@Column(name="is_attempted", nullable=false) private Boolean isAttempted = false;`
+
+9. Use `@Column(name="password_hash", columnDefinition="TEXT")` for passwordHash.
+
+10. Add DB indexes on FK columns:
+
+* `CREATE INDEX idx_attempt_student ON attempts(student_id);` etc.
+
+---
+
+## Epilogue — ready for production
+
+If you apply the checklist above, rebuild with:
+
+```bash
+mvn -U clean package
+```
+
+then run your app. The seven friends will play nicely: no `mappedBy` fights, no JSON dialect drama, and no mysterious `NoClassDefFoundError` from a library expecting PostgreSQL.
+
+If you want, I’ll now:
+
+* Produce the **7 corrected Java files** ready to paste into `src/main/java/...` (one file per class), or
+* Generate **Flyway SQL** migrations matching the final model, or
+* Write a short **service + repository** demo for creating an exam and saving an attempt.
+
+Pick one and I’ll produce it in story-mode (or plain code) next.
+
+
+## =========================
+## 1) User.java
+## =========================
+```java
+package com.example.model;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "users")
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(columnDefinition = "TEXT")
+    private String name;
+
+    @Column(length = 20, unique = true)
+    private String phone;
+
+    @Column(length = 255)
+    private String email;
+
+    @Column(columnDefinition = "TEXT")
+    private String passwordHash;
+
+    @Column(length = 50)
+    private String role;
+
+    @Column(name = "registration_allowed")
+    private Boolean registrationAllowed = false;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    // Getters & Setters
+}
+
+
+package com.example.model;
+
+import jakarta.persistence.*;
+        import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "exams")
+public class Exam {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String title;
+
+    @Column(name = "start_time")
+    private LocalDateTime startTime;
+
+    @Column(name = "end_time")
+    private LocalDateTime endTime;
+
+    @Column(name = "duration_minutes")
+    private Integer durationMinutes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    private User createdBy;
+
+    // Getters & Setters
+}
+package com.example.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "questions")
+public class Question {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String text;
+
+    @Column(length = 20)
+    private String type;
+
+    @Column(columnDefinition = "json")
+    private String choices; // JSON string
+
+    @Column(columnDefinition = "TEXT")
+    private String correctAnswer;
+
+    @Column(nullable = false)
+    private Integer marks = 1;
+
+    // Getters & Setters
+}
+package com.example.model;
+
+import jakarta.persistence.*;
+        import java.util.List;
+
+@Entity
+@Table(name = "question_papers")
+public class QuestionPaper {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "exam_id")
+    private Exam exam;
+
+    @OneToMany(mappedBy = "paper", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<QuestionPaperItem> items;
+
+    // Getters & Setters
+}
+package com.example.model;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "question_paper_items")
+public class QuestionPaperItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "paper_id")
+    private QuestionPaper paper;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "question_id")
+    private Question question;
+
+    @Column(name = "`ordering`")
+    private Integer ordering;
+
+    // Getters & Setters
+}
+package com.example.model;
+
+import jakarta.persistence.*;
+        import java.time.LocalDateTime;
+import java.util.List;
+
+@Entity
+@Table(name = "attempts")
+public class Attempt {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "student_id")
+    private User student;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "exam_id")
+    private Exam exam;
+
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+
+    @OneToMany(mappedBy = "attempt", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<StudentAnswer> answers;
+
+    // Getters & Setters
+}
+package com.example.model;
+
+import jakarta.persistence.*;
+        import java.math.BigDecimal;
+
+@Entity
+@Table(name = "student_answers")
+public class StudentAnswer {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "attempt_id")
+    private Attempt attempt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "question_id")
+    private Question question;
+
+    @Column(columnDefinition = "TEXT")
+    private String answer;
+
+    @Column(name = "is_attempted")
+    private Boolean isAttempted = false;
+
+    @Column(name = "marks_awarded", precision = 10, scale = 2)
+    private BigDecimal marksAwarded;
+
+    // Getters & Setters
+}
+
 # **2.6 — The Official Flyway Migration File (V1__init.sql)**
 Copy this **exact file** into:
 `src/main/resources/db/migration/V1__init.sql`
