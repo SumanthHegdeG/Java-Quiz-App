@@ -33,7 +33,7 @@ public class Attempt {
     @Column(name="submitted_Time")
     private LocalDateTime submittedAt;
 
-    @OneToMany(mappedBy = "attemp",cascade = CascadeType.ALL,orphanRemoval = true)
+    @OneToMany(mappedBy = "attempt",cascade = CascadeType.ALL,orphanRemoval = true)
     private List<StudentAnswer> answers;
 
 }

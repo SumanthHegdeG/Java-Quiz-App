@@ -18,9 +18,10 @@ public class StudentAnswer {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;
 
+    // owning side of the relation
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name="attempt_id")
-    private Attempt attempt;
+    @JoinColumn(name = "attempt_id", nullable = false)
+    private Attempt attempt;   // must match Attempt.answers mappedBy
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name="question_id")
