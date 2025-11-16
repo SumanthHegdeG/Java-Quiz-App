@@ -190,6 +190,7 @@ https://start.spring.io/
 - Lombok
 - Validation
 - Flyway
+- Spring Dev Tools
 
 Download the ZIP → extract → open in IDE.
 
