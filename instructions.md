@@ -704,6 +704,234 @@ If you want next, pick one command:
 * “Create controller route skeletons for Attempt and StudentAnswer”
 
 Choose one and I’ll produce it now.
+Below is **complete dummy data** for **all 7 entities** showing *realistic, relationally-correct* values.
+Use these for testing, seeding, Postman, or DB bootstrap.
+
+---
+
+# ✅ **1. User (Students, Teachers, Invigilators)**
+
+### **USER 1 — Teacher**
+
+```json
+{
+  "id": 1,
+  "name": "Rohit Sharma",
+  "phone": "9876543210",
+  "email": "rohit@academy.com",
+  "passwordHash": "<hashed>",
+  "role": "TEACHER",
+  "registrationAllowed": true,
+  "createdAt": "2025-01-10T08:30:00Z"
+}
+```
+
+### **USER 2 — Invigilator**
+
+```json
+{
+  "id": 2,
+  "name": "Shalini Rao",
+  "phone": "9123456780",
+  "email": "shalini@academy.com",
+  "passwordHash": "<hashed>",
+  "role": "INVIGILATOR",
+  "registrationAllowed": true,
+  "createdAt": "2025-01-11T09:00:00Z"
+}
+```
+
+### **USER 3 — Student**
+
+```json
+{
+  "id": 3,
+  "name": "Aman Verma",
+  "phone": "9988776655",
+  "email": "aman@student.com",
+  "passwordHash": "<hashed>",
+  "role": "STUDENT",
+  "registrationAllowed": true,
+  "createdAt": "2025-02-01T10:00:00Z"
+}
+```
+
+---
+
+# ✅ **2. Exam**
+
+### **EXAM 1**
+
+```json
+{
+  "id": 101,
+  "title": "Java Fundamentals Test",
+  "startTime": "2025-03-10T09:00:00Z",
+  "endTime": "2025-03-10T10:00:00Z",
+  "durationMinutes": 60,
+  "createdBy": 1
+}
+```
+
+---
+
+# ✅ **3. Question (MCQ + Short)**
+
+### **QUESTION 1 — MCQ**
+
+```json
+{
+  "id": 201,
+  "text": "Which keyword is used to inherit a class in Java?",
+  "type": "MCQ",
+  "choices": "[\"extends\", \"implements\", \"inherit\", \"super\"]",
+  "correctAnswer": "extends",
+  "marks": 2
+}
+```
+
+### **QUESTION 2 — MCQ**
+
+```json
+{
+  "id": 202,
+  "text": "Which of these is not a Java primitive type?",
+  "type": "MCQ",
+  "choices": "[\"int\", \"boolean\", \"String\", \"char\"]",
+  "correctAnswer": "String",
+  "marks": 2
+}
+```
+
+### **QUESTION 3 — SHORT**
+
+```json
+{
+  "id": 203,
+  "text": "Explain what JVM is.",
+  "type": "SHORT",
+  "choices": null,
+  "correctAnswer": "Java Virtual Machine that runs Java bytecode",
+  "marks": 5
+}
+```
+
+---
+
+# ✅ **4. QuestionPaper (Exam → Paper)**
+
+### **QUESTION PAPER 1**
+
+```json
+{
+  "id": 301,
+  "exam": 101
+}
+```
+
+---
+
+# ✅ **5. QuestionPaperItem (Paper → Questions)**
+
+### **PAPER ITEMS FOR PAPER 301**
+
+```json
+{
+  "id": 401,
+  "paper": 301,
+  "question": 201,
+  "ordering": 1
+}
+```
+
+```json
+{
+  "id": 402,
+  "paper": 301,
+  "question": 202,
+  "ordering": 2
+}
+```
+
+```json
+{
+  "id": 403,
+  "paper": 301,
+  "question": 203,
+  "ordering": 3
+}
+```
+
+---
+
+# ✅ **6. Attempt (Student starts exam)**
+
+### **ATTEMPT 1**
+
+```json
+{
+  "id": 501,
+  "student": 3,
+  "exam": 101,
+  "startedAt": "2025-03-10T09:05:00Z",
+  "submittedAt": "2025-03-10T09:50:00Z"
+}
+```
+
+---
+
+# ✅ **7. StudentAnswer (Student’s answers for each question)**
+
+### **ANSWER TO Q1**
+
+```json
+{
+  "id": 601,
+  "attempt": 501,
+  "question": 201,
+  "answer": "extends",
+  "isAttempted": true,
+  "marksAwarded": 2
+}
+```
+
+### **ANSWER TO Q2**
+
+```json
+{
+  "id": 602,
+  "attempt": 501,
+  "question": 202,
+  "answer": "String",
+  "isAttempted": true,
+  "marksAwarded": 2
+}
+```
+
+### **ANSWER TO Q3**
+
+```json
+{
+  "id": 603,
+  "attempt": 501,
+  "question": 203,
+  "answer": "JVM is a virtual machine that executes Java bytecode.",
+  "isAttempted": true,
+  "marksAwarded": 4
+}
+```
+
+---
+
+# Want DB Insert SQL also?
+
+I can generate **fully relational SQL INSERT statements** for these 7 entities if you want to seed your database.
+
+Just say:
+**“Give me SQL inserts for these dummy data.”**
+
+Or if you want **Java test data builders**, say:
+**“Give me Java dummy objects for seeding (builder pattern).”**
 
 
 # **2.3 — Final Database Design**
