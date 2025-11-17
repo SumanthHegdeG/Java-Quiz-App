@@ -6,23 +6,17 @@ import lombok.*;
 import java.util.ArrayList;
 import java.util.List;
 
+
 @Entity
-@Table(name="question_paper")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@EqualsAndHashCode
+@Table(name = "question_papers")
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class QuestionPaper {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private long id;
+    private Long id;
 
-    @ManyToOne(fetch=FetchType.LAZY)
-    @JoinColumn(name="Exam_id")
+    @OneToOne
+    @JoinColumn(name = "exam_id")
     private Exam exam;
-
-    @OneToMany(mappedBy = "paper",cascade = CascadeType.ALL,orphanRemoval = true)
-    private List<QuestionPaperItem> items = new ArrayList<>();
 }

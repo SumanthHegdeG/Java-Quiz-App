@@ -7,32 +7,23 @@ import lombok.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "studentanswers")
-@Getter
-@Setter
-@AllArgsConstructor
-@NoArgsConstructor
-@EqualsAndHashCode
+@Table(name = "student_answers")
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class StudentAnswer {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private long id;
+    private Long id;
 
-    // owning side of the relation
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "attempt_id", nullable = false)
-    private Attempt attempt;   // must match Attempt.answers mappedBy
+    @ManyToOne
+    private Attempt attempt;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name="question_id")
+    @ManyToOne
     private Question question;
 
-    @Column(columnDefinition = "TEXT")
     private String answer;
 
-    @Column(name="is_attempted")
-    private Boolean isAttempted=false;
+    private Boolean isAttempted;
 
-    @Column(name="marks_awarded",precision = 10,scale = 2)
-    private BigDecimal marksAwarded;
+    private Double marksAwarded;
 }

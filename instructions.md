@@ -8,6 +8,170 @@ This is a **fully annotated**, explanation-rich consolidated file.
 Due to system limits, the expansion is comprehensive but not infinite; explanations are deep and included everywhere.
 
 ---
+# Client requirements — Exam/Quiz Platform (clear, actionable, in command form)
+
+Overview — purpose
+
+1. Build an online exam/quiz platform to create, schedule, deliver, and grade exams for students, managed by teachers/invigilators.
+2. Support MCQ and short-answer questions, ordered question papers, per-student attempts, and per-question grading.
+
+Actors
+
+1. Define actors: `Student`, `Teacher`, `Invigilator`, `Admin`, `System (automated grader)`.
+
+Functional requirements (grouped, each with acceptance criteria)
+
+1. **User management**
+
+    * Allow users to register with phone, email, name, and password.
+    * Allow admin to toggle `registrationAllowed`; reject registration if disabled.
+    * Provide role assignment (Student / Teacher / Invigilator / Admin).
+    * Acceptance: user can register and log in; login requires phone (unique) + password; role is stored and enforced.
+
+2. **Authentication & authorization**
+
+    * Implement secure password hashing and token-based login (JWT or session).
+    * Enforce role-based access: only Teacher/Invigilator can create exams; only Admin can change roles or toggle registration.
+    * Acceptance: endpoints return 401 for unauthenticated, 403 for unauthorized operations.
+
+3. **Exam creation and scheduling**
+
+    * Allow Teacher/Invigilator to create an `Exam` with title, startTime, endTime, duration, and assigned creator.
+    * Allow attaching exactly one `QuestionPaper` to an `Exam`.
+    * Acceptance: created exam visible in teacher dashboard and scheduled in calendar with correct times.
+
+4. **Question bank**
+
+    * Provide CRUD for `Question` entities supporting `MCQ` (choices) and `SHORT` (text).
+    * Store MCQ choices as structured data (array) and mark correctAnswer.
+    * Acceptance: teacher can create MCQs with choices; the question saves and returns JSON choices.
+
+5. **QuestionPaper & ordering**
+
+    * Allow Teacher to assemble a `QuestionPaper` by selecting questions from the bank and setting an `ordering`.
+    * Persist `QuestionPaperItem` entries to maintain order and reuse questions across papers.
+    * Acceptance: question paper renders in the specified order and can be reused by another exam if required.
+
+6. **Exam attempt lifecycle**
+
+    * Allow Student to start an `Attempt` only within exam window (`startTime <= now <= endTime`).
+    * Create `Attempt` with `startedAt` timestamp. Prevent multiple concurrent attempts if policy forbids.
+    * Allow students to submit answers (create/update `StudentAnswer`) and mark `submittedAt` on final submit.
+    * Acceptance: attempt saved, answers persisted, submission timestamp recorded.
+
+7. **Auto-grading & manual grading**
+
+    * Auto-grade MCQ by comparing `StudentAnswer.answer` to `Question.correctAnswer` and set `marksAwarded`.
+    * Provide teacher UI to manually grade SHORT answers and override marks.
+    * Acceptance: MCQs graded automatically on submission; teacher can grade and save changes.
+
+8. **Result & reporting**
+
+    * Compute totals per `Attempt` and per `Student` for an exam. Provide summary report (score, percent, per-question breakdown).
+    * Allow export of results (CSV or PDF).
+    * Acceptance: teacher downloads result file and values match grades stored.
+
+9. **Audit & history**
+
+    * Record history: creation timestamps, who created/modified exam/questions, and attempt logs.
+    * Acceptance: audit trail shows creator and timestamps for key actions.
+
+10. **Concurrency & integrity**
+
+    * Enforce DB constraints so `QuestionPaperItem` has non-null `paper` and `question`.
+    * Enforce foreign keys and cascade rules only where safe (deleting a Question should not auto-delete papers unless confirmed).
+    * Acceptance: data integrity maintained when deleting or updating entities.
+
+11. **Notifications**
+
+    * Optionally notify students when an exam is scheduled (email/SMS) and when results are available.
+    * Acceptance: notification queued/sent on schedule events.
+
+12. **Search & filters**
+
+    * Allow searching/filtering for exams, users, questions, and attempts (by date, user, score).
+    * Acceptance: search returns matching items within 2 seconds for regular loads.
+
+Non-functional requirements
+
+1. **Security**
+
+    * Hash passwords (bcrypt/argon2) and never expose passwordHash in APIs.
+    * Protect endpoints with HTTPS, rate-limit login, and sanitize inputs to prevent injection.
+2. **Scalability**
+
+    * Support at least N concurrent users (specify N with client); design DB indices for queries (phone, exam startTime).
+3. **Performance**
+
+    * Page responses < 500ms for common queries under normal load. Auto-grading for an attempt must complete within 2 seconds.
+4. **Availability**
+
+    * Target 99.5% uptime. Provide graceful handling if grading or DB is temporarily unavailable.
+5. **Data retention & privacy**
+
+    * Retain attempts and results for X years (client to define). Comply with regional data laws (e.g., consent for student data).
+6. **Extensibility**
+
+    * Design entities to allow new question types (coding, file upload) and multi-section papers.
+
+APIs & endpoints (minimal set, verbs + brief input/output)
+
+1. `POST /api/auth/register` — {name, phone, email, password} -> 201 or 403 if registration disabled.
+2. `POST /api/auth/login` — {phone, password} -> {token}.
+3. `POST /api/exams` (teacher) — {title,startTime,endTime,duration} -> exam object.
+4. `POST /api/questions` — {text,type,choices,correctAnswer,marks} -> question object.
+5. `POST /api/papers` — {examId, [questionIds with ordering]} -> questionPaper object.
+6. `POST /api/exams/{id}/attempts` (student) — start attempt -> attempt id.
+7. `POST /api/attempts/{id}/answers` — {questionId, answer, isAttempted} -> studentAnswer.
+8. `POST /api/attempts/{id}/submit` — final submit -> graded result.
+9. `GET /api/exams/{id}/results` (teacher) — aggregated report.
+
+Data & validation rules (brief)
+
+1. Require `phone` unique, `email` optional but validated.
+2. `Question.marks` > 0.
+3. `Exam.startTime < Exam.endTime`.
+4. `Attempt.submittedAt` >= `Attempt.startedAt`.
+5. `StudentAnswer.answer` length limits depending on question type.
+
+Acceptance criteria (how client will know work is done)
+
+1. End-to-end flow: teacher creates exam + paper → student starts attempt → answers submitted → auto-grade MCQ and teacher grades short answers → results downloadable.
+2. Security tests: password hashed, APIs require auth, unauthorized actions blocked.
+3. DB migration runs and entities compile (`mvn clean compile` success).
+4. Performance checks pass for baseline load.
+
+UI/UX expectations (high-level)
+
+1. Provide clean dashboards for Students (upcoming exams, active attempts) and Teachers (create exams, grade).
+2. Show question navigation, time-left countdown during attempt, autosave answers every X seconds.
+3. Show per-question feedback after grading (optionally hide correct answers until results release).
+
+Edge cases & policies (explicit)
+
+1. Define retry policy: allow single attempt per student per exam or multiple attempts? Make it configurable.
+2. Handling late submissions: accept till `endTime + gracePeriod` (configurable) or reject.
+3. Concurrency: prevent two simultaneous attempts by the same student for same exam.
+4. Question reuse: if question is edited after paper creation, decide whether paper stores snapshot or live reference (recommend snapshot).
+
+Deliverables & milestones (suggested)
+
+1. Phase 1 — Entities + Repos + Compile: DB schema + compile success.
+2. Phase 2 — Auth + User management.
+3. Phase 3 — Exam & Question CRUD + QuestionPaper assembly.
+4. Phase 4 — Attempt flow + auto-grader.
+5. Phase 5 — Teacher grading + reporting + exports.
+6. Phase 6 — UI polish, tests, and deployment.
+
+---
+
+If you want, pick one of these next actions (command form):
+
+* “Write user stories and acceptance tests for Phase 3”
+* “Generate REST API contract (OpenAPI) for the endpoints above”
+* “Produce DB schema SQL migration for these entities”
+
+Choose one and I’ll produce it immediately.
 
 # ==============================================
 # PHASE 0 — ANNOTATED VERSION
@@ -318,6 +482,229 @@ V3__add_analytics_tables.sql
 This guarantees that all developers and environments have the **exact same schema**.
 
 ---
+
+# Explanation of each entity’s motive (actionable, per-class — follow commands)
+
+I’ll explain each entity class’s **purpose**, **key fields**, **constraints**, **relationships**, **typical runtime usage**, **API touchpoints**, and **design notes / recommended changes**. Act on each bullet as a command.
+
+---
+
+# 1) `User` — motive: represent system actor (student / teacher / invigilator / admin)
+
+* Purpose: store identity, authentication, role and registration flags for any person using the system.
+* Key fields to keep: `id`, `name`, `phone` (unique, primary login), `email`, `passwordHash`, `role`, `registrationAllowed`, `createdAt`.
+* Constraints (implement now):
+
+    * Enforce `phone` uniqueness at DB level (`@Column(unique=true)` + index).
+    * `passwordHash` must be non-null and write-only in APIs.
+    * `role` should be an `enum` (not free text).
+* Relationships:
+
+    * 1 User **creates** many `Exam` (`Exam.createdBy`).
+    * 1 User (student) **has** many `Attempt`.
+    * Teachers/Invigilators **grade** or **own** `StudentAnswer`s indirectly via attempts.
+* Typical runtime flow:
+
+    * Register → store hashed password → set `registrationAllowed` check → login → receive token → perform role-based actions.
+* API touchpoints:
+
+    * `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/users/{id}`, admin endpoints for role toggling.
+* Design notes / commands:
+
+    * Replace `String role` with `Role role` enum.
+    * Annotate `passwordHash` as write-only (`@JsonProperty(access = WRITE_ONLY)`).
+    * Add audit fields `createdBy` / `updatedBy` if required.
+    * Implement validation: phone format, optional email validation.
+
+---
+
+# 2) `Exam` — motive: model a scheduled, gradeable exam event
+
+* Purpose: define an exam session (title, schedule, duration) and link to the paper and creator.
+* Key fields: `id`, `title`, `startTime`, `endTime`, `durationMinutes`, `createdBy`.
+* Constraints:
+
+    * `startTime < endTime` (validate before persist).
+    * `durationMinutes` consistent with `endTime - startTime` or used as authoritative duration (pick one).
+* Relationships:
+
+    * Many `Exam` ← 1 `User` (creator).
+    * 1 `Exam` → 1 `QuestionPaper` (in your model).
+    * 1 `Exam` ← many `Attempt`s.
+* Typical runtime flow:
+
+    * Teacher creates exam → assigns/creates paper → students see exam in list when `now` within registration window → students create `Attempt`.
+* API touchpoints:
+
+    * `POST /api/exams`, `GET /api/exams`, `GET /api/exams/{id}`.
+* Design notes / commands:
+
+    * Decide and document whether `durationMinutes` or `endTime` is authoritative; enforce one.
+    * Mark `createdBy` as `@ManyToOne(fetch = LAZY, optional = false)`; store creator id for audit.
+    * Add `status` enum (DRAFT, SCHEDULED, ONGOING, FINISHED, CANCELLED).
+
+---
+
+# 3) `Question` — motive: canonical question bank item
+
+* Purpose: single unit of assessment (MCQ or SHORT) that can be reused across papers.
+* Key fields: `id`, `text`, `type`, `choices` (JSON), `correctAnswer`, `marks`.
+* Constraints:
+
+    * `text` non-null.
+    * If `type == MCQ` then `choices` must be non-empty and `correctAnswer` must match one choice; validate on save.
+    * `marks` > 0.
+* Relationships:
+
+    * Many `QuestionPaperItem` → 1 `Question` (reused across papers).
+    * Referenced by `StudentAnswer.question`.
+* Typical runtime flow:
+
+    * Teacher creates question → stores choices for MCQ → adds to question paper as `QuestionPaperItem`. During grading, `correctAnswer` used for auto-grading.
+* API touchpoints:
+
+    * `POST /api/questions`, `PUT /api/questions/{id}`, `GET /api/questions`.
+* Design notes / commands:
+
+    * Replace `String type` with `QuestionType` enum.
+    * Model `choices` as `List<String>` with an `AttributeConverter` to/from JSON (or use `@Type(json)` if using Hibernate types).
+    * Consider storing `correctAnswer` as index (int) for MCQ (safer than text match).
+    * Do not store sensitive marking config in `Question`—store meta if needed (negative marks flag, partial credit).
+
+---
+
+# 4) `QuestionPaper` — motive: container/assembly for an exam’s ordered questions
+
+* Purpose: bind a question set to a particular `Exam`. Currently modeled 1:1 with `Exam`.
+* Key fields: `id`, `exam` (one-to-one). Consider adding `title`, `version`, `snapshot` flag.
+* Constraints:
+
+    * `exam_id` should be unique to enforce one-paper-per-exam if that’s required.
+* Relationships:
+
+    * 1 `QuestionPaper` ← many `QuestionPaperItem`s.
+    * 1 `QuestionPaper` → 1 `Exam`.
+* Typical runtime flow:
+
+    * Teacher assembles a `QuestionPaper` by creating `QuestionPaperItem`s referencing questions in order. On exam start, the system reads the paper and renders questions in `ordering`.
+* API touchpoints:
+
+    * `POST /api/papers`, `GET /api/papers/{id}`, `POST /api/papers/{id}/items` (to add questions).
+* Design notes / commands:
+
+    * If question edits must not change already-scheduled papers, implement **paper snapshotting**: copy question content into `QuestionPaperItem` (or store `questionVersion` or JSON snapshot).
+    * Add `version` or `immutable` flag to prevent accidental edits after exam publishing.
+
+---
+
+# 5) `QuestionPaperItem` — motive: ordered linking table between paper and question
+
+* Purpose: link `QuestionPaper` to `Question` and provide an `ordering` for rendering. Optionally hold per-question overrides (e.g., marks override).
+* Key fields: `id`, `paper`, `question`, `ordering`, optional `marksOverride`.
+* Constraints:
+
+    * Composite uniqueness: `(paper_id, ordering)` unique.
+    * `(paper_id, question_id)` may be unique if disallowing duplicates; allow duplicates if you want repeated questions.
+* Relationships:
+
+    * `ManyToOne` to `QuestionPaper` and to `Question`.
+* Typical runtime flow:
+
+    * When generating the exam view, query `QuestionPaperItem` by `paper_id` ordered by `ordering`; for each item, fetch `Question` (or snapshot) to present.
+* API touchpoints:
+
+    * `POST /api/papers/{paperId}/items` to add; `DELETE` / `PATCH` to reorder.
+* Design notes / commands:
+
+    * Add DB index on `(paper_id, ordering)`.
+    * Consider storing `questionSnapshot` JSON in the item if you want immutable paper content.
+
+---
+
+# 6) `Attempt` — motive: student’s exam session instance
+
+* Purpose: record a student’s attempt at an `Exam` — timestamps and reference to student and exam. This is the parent for all `StudentAnswer` entries for that run.
+* Key fields: `id`, `student` (User), `exam`, `startedAt`, `submittedAt`, add `status` (IN_PROGRESS, SUBMITTED, TIMED_OUT).
+* Constraints:
+
+    * Validate time window: allow creation only if `now` within allowed window/policy.
+    * Prevent duplicate concurrent attempts if policy forbids.
+* Relationships:
+
+    * 1 `Attempt` ← many `StudentAnswer`.
+    * `Attempt` → `User` (student) and → `Exam`.
+* Typical runtime flow:
+
+    * Student clicks Start → system creates `Attempt` with `startedAt`. During exam, autosave creates/updates `StudentAnswer`. On submit, set `submittedAt`, run auto-grader, compute totals.
+* API touchpoints:
+
+    * `POST /api/exams/{id}/attempts`, `GET /api/attempts/{id}`, `POST /api/attempts/{id}/submit`.
+* Design notes / commands:
+
+    * Add `durationUsed` or `timeTaken` if needed for analytics.
+    * Track client IP / device info in attempt for audit/anti-cheat.
+
+---
+
+# 7) `StudentAnswer` — motive: per-question answer record for a specific attempt
+
+* Purpose: capture the student’s response to one `Question` during an `Attempt`, including attempted flag and marks awarded.
+* Key fields: `id`, `attempt`, `question`, `answer`, `isAttempted`, `marksAwarded`, optionally `gradedBy`, `gradedAt`, `feedback`.
+* Constraints:
+
+    * Composite uniqueness: `(attempt_id, question_id)` should be unique (one answer per question per attempt) unless multiple revisions are allowed (then use versions).
+    * `marksAwarded` must be ≤ `Question.marks` (if not overridden).
+* Relationships:
+
+    * Many `StudentAnswer` → 1 `Attempt`.
+    * Many `StudentAnswer` → 1 `Question`.
+* Typical runtime flow:
+
+    * Student answers question → system saves/upserts `StudentAnswer`. On final submit, auto-grade MCQs and set `marksAwarded`. Teachers can adjust for SHORT answers; store `gradedBy` and `gradedAt`.
+* API touchpoints:
+
+    * `POST /api/attempts/{id}/answers`, `PUT /api/attempts/{id}/answers/{qid}`, `GET /api/attempts/{id}/answers`.
+* Design notes / commands:
+
+    * Enforce `(attempt_id, question_id)` unique constraint.
+    * Add `feedback` and grader fields for manual grading traceability.
+    * Consider `answer` schema per question type (for file uploads, code, etc.)—store as JSON if varied.
+
+---
+
+# Cross-entity acceptance checks (run these validations)
+
+* Command: enforce DB constraints:
+
+    * Add foreign key constraints for all `@ManyToOne` / `@OneToOne` relationships.
+    * Add unique index: `users.phone`.
+    * Add unique index: `question_papers.exam_id` (if you require 1:1).
+    * Add unique composite index: `student_answers (attempt_id, question_id)`.
+* Command: implement server-side validators:
+
+    * Ensure `Exam.startTime < Exam.endTime`.
+    * Ensure MCQ validation (`choices` present, `correctAnswer` valid).
+    * Ensure `Attempt` window checks before creation.
+
+---
+
+# Quick mapping to client requirements (execute items)
+
+* For authentication & role-based access: use `User.role` enum + secure `passwordHash`.
+* For scheduling and attempt lifecycle: rely on `Exam` and `Attempt` timestamps and `status` fields.
+* For auto-grading: use `Question.correctAnswer` (MCQ) and implement auto-grader that writes `StudentAnswer.marksAwarded`.
+* For reporting: aggregate `marksAwarded` grouped by `Attempt` and `User`.
+
+---
+
+If you want next, pick one command:
+
+* “Generate JPA annotations + validation snippets for each entity”
+* “Produce SQL migration (Flyway) for these tables with indices and constraints”
+* “Create controller route skeletons for Attempt and StudentAnswer”
+
+Choose one and I’ll produce it now.
+
 
 # **2.3 — Final Database Design**
 ## **Tables Needed**

@@ -3,37 +3,25 @@ package com.sumanth.ExamPortal.Artifactname.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@AllArgsConstructor
-@Getter
-@Setter
-@NoArgsConstructor
-@EqualsAndHashCode
 @Entity
 @Table(name = "attempts")
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Attempt {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    private long id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "student_Id")
+    @ManyToOne
     private User student;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name="exam_id")
+    @ManyToOne
     private Exam exam;
 
-    @Column(name="started_at")
-    private LocalDateTime startedAt;
-
-    @Column(name="submitted_Time")
-    private LocalDateTime submittedAt;
-
-    @OneToMany(mappedBy = "attempt",cascade = CascadeType.ALL,orphanRemoval = true)
-    private List<StudentAnswer> answers;
-
+    private Instant startedAt;
+    private Instant submittedAt;
 }
