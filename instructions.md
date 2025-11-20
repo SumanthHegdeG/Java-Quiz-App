@@ -920,6 +920,278 @@ Use these for testing, seeding, Postman, or DB bootstrap.
   "marksAwarded": 4
 }
 ```
+# Explain each entity: purpose, key fields, relations (cardinality), and notes/suggestions
+
+Follow these sections: Entity → Purpose → Key fields → Relations → Notes & suggestions.
+
+---
+
+# User
+
+Purpose: represent people using the system (invigilators, teachers, students).
+
+Key fields:
+
+* `id` (PK, Long, auto-generated)
+* `name`, `phone` (unique), `email`
+* `passwordHash` (stored hashed)
+* `role` (INVIGILATOR / TEACHER / STUDENT)
+* `registrationAllowed` (boolean flag)
+* `createdAt` (Instant, default now)
+
+Relations:
+
+* One `User` **creates** many `Exam`s (`@OneToMany` from User → Exam, mapped by `createdBy`). (Cardinality: 1 — *many*)
+
+Notes & suggestions:
+
+* Enforce `role` via enum instead of free string to avoid invalid roles.
+* Add `@Column(nullable=false)` where appropriate (e.g., `name`, `phone`).
+* Consider `unique` index on `email` too.
+* Use secure password handling (bcrypt) and never expose `passwordHash` in DTOs.
+* Consider audit fields (updatedAt, updatedBy) if edits matter.
+
+---
+
+# Exam
+
+Purpose: represent an exam session (title, start/end, duration) created by an invigilator/teacher.
+
+Key fields:
+
+* `id` (PK)
+* `title`
+* `startTime`, `endTime` (Instant)
+* `durationMinutes` (Integer)
+* `createdBy` (Many-to-one → User)
+
+Relations:
+
+* Many `Exam`s are **created by** one `User` (invigilator/teacher). (N → 1)
+* One `Exam` **has one** `QuestionPaper` (`@OneToOne` in QuestionPaper). (1 → 1)
+* Many `Attempt`s relate to one `Exam`. (1 → *many*)
+
+Notes & suggestions:
+
+* Validate `startTime < endTime`; either in service layer or via DB constraint/triggers.
+* If exam duration should be derived from start/end, consider removing `durationMinutes` or keep as denormalized for convenience.
+* If multiple papers per exam are allowed (e.g., versions), switch `QuestionPaper` to `@OneToMany` instead of `OneToOne`.
+
+---
+
+# Question
+
+Purpose: store individual questions used in papers (MCQ or short answer).
+
+Key fields:
+
+* `id` (PK)
+* `text` (question body)
+* `type` (`MCQ` or `SHORT`)
+* `choices` (stored as `jsonb` string for MCQ)
+* `correctAnswer` (string)
+* `marks` (Integer, default 1)
+
+Relations:
+
+* Referenced by `QuestionPaperItem` (many paper items can reference the same question). (1 → *many*)
+
+Notes & suggestions:
+
+* `choices` as `jsonb` is flexible (array of choices). Prefer storing as `List<String>` in JPA with an attribute converter or use a proper `@Type` for JSON to avoid manual parsing.
+* Store `type` as an enum.
+* For MCQs, store `correctAnswer` as an index or key consistent with `choices` structure to avoid ambiguity.
+* Consider adding `difficulty`, `topic`, or `tags` for filtering/reuse.
+* If answers are long texts (SHORT), consider text column type (CLOB).
+
+---
+
+# QuestionPaper
+
+Purpose: link an `Exam` to a concrete paper (the actual set/variant of questions) — currently modelled one paper per exam.
+
+Key fields:
+
+* `id` (PK)
+* `exam` (`@OneToOne` with `exam_id` foreign key)
+
+Relations:
+
+* One `QuestionPaper` **belongs to** one `Exam`. (1 → 1)
+* One `QuestionPaper` **has many** `QuestionPaperItem`s (items that link questions). (1 → *many*)
+
+Notes & suggestions:
+
+* Ensure `exam_id` is unique in DB to enforce one-to-one. Add `unique=true` on the `@JoinColumn` or a unique constraint on `exam_id`.
+* If exam can have multiple versions, convert to `@ManyToOne` or `@OneToMany` as needed.
+* Consider including metadata on paper (version, totalMarks, shuffling flag).
+
+---
+
+# QuestionPaperItem
+
+Purpose: join table that orders questions inside a `QuestionPaper` (paper → ordered list of Question references).
+
+Key fields:
+
+* `id` (PK)
+* `paper` (`@ManyToOne` → `QuestionPaper`)
+* `question` (`@ManyToOne` → `Question`)
+* `ordering` (Integer; order within paper)
+
+Relations:
+
+* Many `QuestionPaperItem`s belong to one `QuestionPaper`. (N → 1)
+* Many `QuestionPaperItem`s reference one `Question`. (N → 1)
+
+Notes & suggestions:
+
+* Add a composite unique constraint on `(paper_id, ordering)` to prevent duplicates in ordering.
+* Optionally use `(paper_id, question_id)` unique if you want to avoid duplicate questions in same paper.
+* When fetching paper with ordered questions, use `ORDER BY ordering`.
+* Consider storing per-item marks if different questions carry different marks in different papers.
+
+---
+
+# Attempt
+
+Purpose: represent a student's attempt at an exam (session instance: start and submit times).
+
+Key fields:
+
+* `id` (PK)
+* `student` (`@ManyToOne` → `User`)
+* `exam` (`@ManyToOne` → `Exam`)
+* `startedAt`, `submittedAt` (Instant)
+
+Relations:
+
+* Many `Attempt`s belong to one `User` (student). (N → 1)
+* Many `Attempt`s belong to one `Exam`. (N → 1)
+* One `Attempt` **has many** `StudentAnswer`s. (1 → *many*)
+
+Notes & suggestions:
+
+* Add `status` (IN_PROGRESS, SUBMITTED, TIMED_OUT) for clarity.
+* Add `totalMarks` or computed score for convenience.
+* Consider uniqueness constraint: `(student_id, exam_id)` if only one attempt per student per exam is allowed. If multiple attempts allowed, include attempt number/version.
+* Add exam version/paper reference to Attempt if multiple papers exist and you want to record which paper the student saw.
+
+---
+
+# StudentAnswer
+
+Purpose: store each answer that a student gave for a question within an `Attempt`.
+
+Key fields:
+
+* `id` (PK)
+* `attempt` (`@ManyToOne` → `Attempt`)
+* `question` (`@ManyToOne` → `Question`)
+* `answer` (String)
+* `isAttempted` (Boolean)
+* `marksAwarded` (Double)
+
+Relations:
+
+* Many `StudentAnswer`s belong to one `Attempt`. (N → 1)
+* Many `StudentAnswer`s reference one `Question`. (N → 1)
+
+Notes & suggestions:
+
+* Add composite unique constraint `(attempt_id, question_id)` to prevent duplicate answers for same question in same attempt.
+* Use `marksAwarded` nullable until graded; include grader info if manual marking: `gradedBy`, `gradedAt`.
+* For MCQ auto-grading, implement a service that compares `answer` to `correctAnswer` and sets `marksAwarded`.
+
+---
+
+# ER summary (textual)
+
+* `User (1)` — creates → `Exam (N)`
+* `Exam (1)` — has → `QuestionPaper (1)` (one-to-one in current model)
+* `QuestionPaper (1)` — contains → `QuestionPaperItem (N)`
+* `QuestionPaperItem (N)` — references → `Question (1)`
+* `Exam (1)` — has → `Attempt (N)`
+* `Attempt (1)` — has → `StudentAnswer (N)`
+* `Question (1)` — referenced by → `QuestionPaperItem (N)` and `StudentAnswer (N)`
+
+---
+
+# Common JPQL / SQL examples
+
+Provide these commands to fetch common object graphs.
+
+1. Fetch exam with paper and ordered questions (JPQL):
+
+```java
+// JPQL (fetch paper items ordered)
+select p from QuestionPaper p
+ join fetch p.exam e
+ join fetch p.items i
+ join fetch i.question q
+where p.exam.id = :examId
+order by i.ordering
+```
+
+2. Get attempt with answers:
+
+```sql
+SELECT a.*, sa.*, q.*
+FROM attempts a
+JOIN student_answers sa ON sa.attempt_id = a.id
+JOIN questions q ON q.id = sa.question_id
+WHERE a.id = :attemptId;
+```
+
+3. Auto-grade MCQ for an attempt (pseudo-SQL logic):
+
+```sql
+UPDATE student_answers sa
+SET marks_awarded = q.marks
+FROM questions q
+WHERE sa.question_id = q.id
+  AND q.type = 'MCQ'
+  AND sa.answer = q.correct_answer
+  AND sa.attempt_id = :attemptId;
+```
+
+---
+
+# Practical improvements & validation rules (commands)
+
+* Use enums for `role` and `type` fields.
+* Add `NOT NULL` where logically required (`name`, `phone`, `text` for questions).
+* Add indexes on `exam.startTime`, `attempt.student_id`, and `question.id` for performance.
+* Add DB constraints:
+
+    * `exam.start_time < exam.end_time` (check constraint)
+    * unique on `question_papers.exam_id` for one-to-one semantics
+    * unique `(attempt_id, question_id)` in `student_answers`
+* Normalize `choices` by either:
+
+    * keep `jsonb` but map to a `List<String>` via converter; or
+    * create `question_choices` table if you need to query choices individually.
+* Add cascade rules carefully (e.g., deleting an exam should not drop historical attempts — prefer `RESTRICT` for audits).
+
+---
+
+# Quick checklist to implement in code (commands)
+
+1. Convert `role` and `type` to enums.
+2. Add unique constraint for `question_papers.exam_id`.
+3. Add `(attempt_id, question_id)` unique constraint in `student_answers`.
+4. Add `status` field to `Attempt`.
+5. Add `gradedBy`, `gradedAt` to `StudentAnswer` if manual grading is expected.
+6. Add validation logic for `startTime < endTime`.
+
+---
+
+If you want, generate:
+
+* an ER diagram (ASCII or PlantUML), or
+* DTOs and repository method signatures (JPQL examples) for common operations (create exam, build paper, start attempt, submit attempt, grade attempt).
+
+Tell me which one to produce next.
 
 ---
 
